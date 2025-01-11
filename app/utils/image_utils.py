@@ -48,31 +48,31 @@ def detect_plaque(image_path):
     # Apply minimal Gaussian blur
     blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     
-    # Create multiple thresholds to catch different intensity levels
+    # Intensity thresholds for plaque detection
     thresholds = [
-        (160, 14),  # High intensity spots (threshold, min_contrast)
-        (140, 11),  # Medium intensity spots
-        (125, 8)    # Lower intensity spots
+        (160, 14),  # High intensity
+        (140, 11),  # Medium intensity
+        (125, 8)    # Low intensity
     ]
     
-    # Process contours and calculate plaque score
+    # Initialize detection parameters
     processed_image = image.copy()
     plaque_score = 0
     plaque_count = 0
     total_plaque_area = 0
-    processed_regions = np.zeros_like(gray)  # Track processed regions
+    processed_regions = np.zeros_like(gray)
     
     def process_contour(contour, min_contrast):
         area = cv2.contourArea(contour)
-        if 0.5 < area < 3000:  # Even further reduced minimum area for smaller spots
+        if 0.5 < area < 3000:
             mask = np.zeros_like(gray)
             cv2.drawContours(mask, [contour], -1, 255, -1)
             
-            # Check if region was already processed
+            # Skip if region already processed
             if cv2.countNonZero(cv2.bitwise_and(processed_regions, mask)) > 0:
                 return False, 0, 0
             
-            # Get the region of interest
+            # Extract region properties
             roi = cv2.bitwise_and(blurred, blurred, mask=mask)
             roi_values = roi[roi != 0]
             
@@ -81,48 +81,44 @@ def detect_plaque(image_path):
                 max_intensity = np.max(roi_values)
                 std_intensity = np.std(roi_values)
                 
-                # Get immediate surrounding region (3-pixel border for better context)
+                # Analyze surrounding tissue
                 x, y, w, h = cv2.boundingRect(contour)
                 x1, y1 = max(0, x-3), max(0, y-3)
                 x2, y2 = min(gray.shape[1], x+w+3), min(gray.shape[0], y+h+3)
                 
-                # Create surrounding mask
                 surround_mask = np.zeros_like(gray)
                 cv2.rectangle(surround_mask, (x1, y1), (x2, y2), 255, -1)
                 cv2.drawContours(surround_mask, [contour], -1, 0, -1)
                 
-                # Get surrounding intensity
                 surround = cv2.bitwise_and(blurred, blurred, mask=surround_mask)
                 surround_values = surround[surround != 0]
                 
                 if len(surround_values) > 0:
+                    # Calculate contrast metrics
                     surround_mean = np.mean(surround_values)
                     surround_std = np.std(surround_values)
                     contrast = mean_intensity - surround_mean
                     max_contrast = max_intensity - surround_mean
-                    
-                    # Calculate local tissue statistics
                     local_variation = std_intensity / (mean_intensity + 1e-6)
-                    surround_variation = surround_std / (surround_mean + 1e-6)
                     
-                    # Adjust criteria based on spot size with more granular thresholds
-                    if area < 1:  # Ultra tiny spots
-                        contrast_multiplier = 0.5  # Most lenient contrast requirement
+                    # Adjust detection parameters based on spot size
+                    if area < 1:
+                        contrast_multiplier = 0.5
                         variation_threshold = 0.8
-                        intensity_boost = 1.2  # Highest intensity boost
-                    elif area < 2:  # Extremely tiny spots
+                        intensity_boost = 1.2
+                    elif area < 2:
                         contrast_multiplier = 0.55
                         variation_threshold = 0.75
                         intensity_boost = 1.18
-                    elif area < 3:  # Very tiny spots
+                    elif area < 3:
                         contrast_multiplier = 0.6
                         variation_threshold = 0.7
                         intensity_boost = 1.15
-                    elif area < 5:  # Small spots
+                    elif area < 5:
                         contrast_multiplier = 0.65
                         variation_threshold = 0.65
                         intensity_boost = 1.12
-                    elif area < 10:  # Medium spots
+                    elif area < 10:
                         contrast_multiplier = 0.75
                         variation_threshold = 0.6
                         intensity_boost = 1.08
@@ -131,52 +127,51 @@ def detect_plaque(image_path):
                         variation_threshold = 0.5
                         intensity_boost = 1.0
                     
-                    # Enhanced criteria for plaque detection with lower thresholds
+                    # Evaluate plaque criteria
                     is_significant_contrast = (contrast > min_contrast * contrast_multiplier and 
-                                            max_contrast > min_contrast * 1.02)  # Further reduced contrast requirement
+                                            max_contrast > min_contrast * 1.02)
                     is_distinct_from_background = (mean_intensity > surround_mean * 1.04 * intensity_boost)
                     is_not_noise = local_variation < variation_threshold
                     is_not_normal_variation = (contrast / surround_std) > 1.4
                     
-                    # Additional check for normal heart tissue with more granular validation
-                    if surround_mean < 85:  # Very dark region of heart
-                        min_contrast_multiplier = 1.6  # Very strict for very dark regions
-                    elif surround_mean < 100:  # Dark regions
+                    # Adjust contrast requirements based on tissue intensity
+                    if surround_mean < 85:
+                        min_contrast_multiplier = 1.6
+                    elif surround_mean < 100:
                         min_contrast_multiplier = 1.4
-                    elif surround_mean < 120:  # Medium dark regions
+                    elif surround_mean < 120:
                         min_contrast_multiplier = 1.2
-                    elif surround_mean < 140:  # Light regions
+                    elif surround_mean < 140:
                         min_contrast_multiplier = 1.0
                     else:
                         min_contrast_multiplier = 0.8
                     
-                    # Intensity-based validation with more granular checks
+                    # Validate intensity levels
                     intensity_valid = True
-                    if mean_intensity < 95:  # Very dark regions
+                    if mean_intensity < 95:
                         intensity_valid = max_contrast > min_contrast * 1.7
-                    elif mean_intensity < 110:  # Dark regions
+                    elif mean_intensity < 110:
                         intensity_valid = max_contrast > min_contrast * 1.5
-                    elif mean_intensity < 130:  # Medium dark regions
+                    elif mean_intensity < 130:
                         intensity_valid = max_contrast > min_contrast * 1.3
-                    elif mean_intensity < 150:  # Medium light regions
+                    elif mean_intensity < 150:
                         intensity_valid = max_contrast > min_contrast * 1.1
                     
-                    # Enhanced handling for bright spots
-                    if mean_intensity > 145:  # Bright spots
-                        intensity_boost *= 1.15  # Increased boost for bright spots
-                        if area < 5:  # Small bright spots
-                            contrast_multiplier *= 0.7  # Even more lenient with small bright spots
+                    # Apply additional criteria for bright regions
+                    if mean_intensity > 145:
+                        intensity_boost *= 1.15
+                        if area < 5:
+                            contrast_multiplier *= 0.7
                     
-                    # Special handling for very bright small spots
-                    if area < 5 and mean_intensity > 150:  # Small but very bright spots
+                    if area < 5 and mean_intensity > 150:
                         intensity_valid = True
-                        min_contrast_multiplier *= 0.7  # Even more reduced contrast requirement
-                        
-                    # Additional boost for extremely small bright spots
+                        min_contrast_multiplier *= 0.7
+                    
                     if area < 2 and mean_intensity > 140:
                         intensity_boost *= 1.2
                         contrast_multiplier *= 0.6
                     
+                    # Validate plaque detection
                     if (is_significant_contrast and 
                         is_distinct_from_background and 
                         is_not_noise and 
@@ -184,7 +179,6 @@ def detect_plaque(image_path):
                         contrast > min_contrast * min_contrast_multiplier and
                         intensity_valid):
                         
-                        # Mark this region as processed
                         cv2.drawContours(processed_regions, [contour], -1, 255, -1)
                         return True, area, mean_intensity
         return False, 0, 0
