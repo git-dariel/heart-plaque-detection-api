@@ -1,25 +1,13 @@
-import os
 import cv2
 import numpy as np
-from werkzeug.utils import secure_filename
 from flask import current_app
 
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in current_app.config["ALLOWED_EXTENSIONS"]
 
-def save_uploaded_file(file):
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
-        file.save(file_path)
-        return file_path
-    return None
-
-def detect_plaque(image_path):
-    # Load the image
-    image = cv2.imread(image_path)
+def detect_plaque(image):
     if image is None:
-        raise ValueError("Image could not be loaded.")
+        raise ValueError("Invalid image data")
     
     # Convert to grayscale
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -235,13 +223,8 @@ def detect_plaque(image_path):
     else:
         message = "Severe Calcification"
     
-    # Save the processed image
-    upload_folder = current_app.config['UPLOAD_FOLDER']
-    if not os.path.exists(upload_folder):
-        os.makedirs(upload_folder)
+    # Convert processed image to bytes
+    _, buffer = cv2.imencode('.png', processed_image)
+    processed_image_bytes = buffer.tobytes()
     
-    processed_image_filename = 'processed_' + os.path.basename(image_path)
-    processed_image_path = os.path.join(upload_folder, processed_image_filename)
-    cv2.imwrite(processed_image_path, processed_image)
-    
-    return plaque_score, processed_image_path, message
+    return plaque_score, processed_image_bytes, message

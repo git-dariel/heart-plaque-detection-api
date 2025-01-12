@@ -3,25 +3,29 @@ from app.middlewares.upload_middleware import handle_file_upload
 from app.services.image_processing_service import ImageProcessingService
 from app.services.cloudinary_service import CloudinaryService
 import os
+import cv2
 
 image_route = Blueprint("image_route", __name__)
 
 @image_route.route("/api/detect-plaque", methods=["POST"])
 def detect_plaque():
-    file_path, error = handle_file_upload()
+    image, error = handle_file_upload()
     if error:
         return jsonify({"error": error}), 400
     
     # Upload original image to Cloudinary
-    original_image_url = CloudinaryService.upload_original_image(file_path)
+    # Convert image to bytes for Cloudinary upload
+    _, buffer = cv2.imencode('.png', image)
+    original_image_bytes = buffer.tobytes()
+    original_image_url = CloudinaryService.upload_original_image(original_image_bytes)
     if not original_image_url:
         return jsonify({"error": "Failed to upload original image"}), 500
 
     # Process the image
-    result = ImageProcessingService.process_image(file_path)
+    result = ImageProcessingService.process_image(image)
     
     # Upload processed image to Cloudinary
-    processed_image_url = CloudinaryService.upload_processed_image(result["processed_image_path"])
+    processed_image_url = CloudinaryService.upload_processed_image(result["processed_image_bytes"])
     if not processed_image_url:
         return jsonify({"error": "Failed to upload processed image"}), 500
 
