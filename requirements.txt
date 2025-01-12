@@ -2,3 +2,5 @@ Flask
 opencv-python
 numpy
 python-dotenv
+cloudinary==1.36.0
+flask-cors
