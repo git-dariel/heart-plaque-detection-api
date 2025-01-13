@@ -5,3 +5,4 @@ python-dotenv
 cloudinary==1.36.0
 flask-cors
 gunicorn==21.2.0
+flasgger
