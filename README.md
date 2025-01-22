@@ -70,7 +70,6 @@ heart-plaque-detection-api/
 │   ├── utils/
 │   │   └── image_utils.py
 │   └── ...
-├── uploads/
 ├── .env
 ├── requirements.txt
 └── run.py
